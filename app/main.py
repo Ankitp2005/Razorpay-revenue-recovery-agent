@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
@@ -7,6 +7,7 @@ from app.schemas import WebhookPayload
 from app.classifier import classify_error
 from app.decision_engine import decide_action
 from app.recovery_simulator import simulate_recovery_outcome
+from app.razorpay_client import create_recovery_payment_link
 from app import db
 
 
@@ -48,9 +49,12 @@ def handle_webhook(payload: WebhookPayload):
       2. Classify the error_code into a failure bucket.
       3. Determine which recovery attempt number this is.
       4. Decide the action via the decision engine.
-      5. If action involves customer outreach, simulate the outcome.
-      6. Write one audit_log row.
-      7. Return the decision JSON.
+      5. If action involves customer outreach:
+         a. Look up customer_name, customer_phone, plan_name from DB.
+         b. Call create_recovery_payment_link() — real Razorpay API.
+         c. Simulate whether the synthetic customer "pays" (unchanged).
+      6. Write one audit_log row (including link id/url if created).
+      7. Return the decision JSON (including payment_link_url if created).
     """
     try:
         sub_entity = payload.payload.subscription.entity
@@ -86,12 +90,64 @@ def handle_webhook(payload: WebhookPayload):
     reasoning = decision["reasoning"]
 
     outcome: str | None = None
+    razorpay_payment_link_id: str | None = None
+    razorpay_short_url: str | None = None
+    payment_link_url: str | None = None
 
-    if action in ("send_recovery_link", "send_nudge", "send_card_update_link"):
+    if action in ("send_recovery_link", "send_card_update_link", "send_nudge"):
+        # ---------------------------------------------------------------- #
+        # Step 5a — look up customer details from subscriptions table.     #
+        # ---------------------------------------------------------------- #
+        conn = db.get_connection()
+        sub_row = conn.execute(
+            "SELECT customer_name, customer_phone, plan_name, plan_amount_inr "
+            "FROM subscriptions WHERE subscription_id = ?",
+            (subscription_id,),
+        ).fetchone()
+        conn.close()
+
+        if sub_row:
+            customer_name = sub_row["customer_name"]
+            customer_phone = sub_row["customer_phone"]
+            plan_name = sub_row["plan_name"]
+            link_amount = sub_row["plan_amount_inr"] or amount_inr or 0
+        else:
+            # Payload contains synthetic data — fall back gracefully
+            customer_name = sub_entity.get("customer_name", "Subscriber")
+            customer_phone = sub_entity.get("customer_contact", "+919999999999")
+            plan_name = sub_entity.get("plan_name", "Subscription")
+            link_amount = amount_inr or 0
+
+        description = (
+            f"Recovery payment for {plan_name} - attempt {current_attempt}"
+        )
+
+        # ---------------------------------------------------------------- #
+        # Step 5b — real Razorpay Payment Link API call.                   #
+        # ---------------------------------------------------------------- #
+        link_result = create_recovery_payment_link(
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            amount_inr=link_amount,
+            subscription_id=subscription_id,
+            description=description,
+        )
+
+        if link_result["success"]:
+            razorpay_payment_link_id = link_result["payment_link_id"]
+            razorpay_short_url = link_result["short_url"]
+            payment_link_url = razorpay_short_url
+        else:
+            # Real API call failed — note it, but keep going
+            reasoning = reasoning + f" [LINK CREATION FAILED: {link_result['error']}]"
+
+        # ---------------------------------------------------------------- #
+        # Step 5c — simulate synthetic "did customer pay" outcome.         #
+        # Logic unchanged from Package 2.                                  #
+        # ---------------------------------------------------------------- #
         recovered = simulate_recovery_outcome(bucket)
         if recovered:
             outcome = "recovered"
-            # Mark with a sentinel so no further attempts are made for this sub
             _recovery_attempt_counter[subscription_id] = 999
         else:
             outcome = "failed"
@@ -99,11 +155,9 @@ def handle_webhook(payload: WebhookPayload):
 
     elif action == "escalate_to_human":
         outcome = "escalated"
-        # Human review is not an automated attempt; do not increment counter
 
     elif action == "defer_to_razorpay":
         outcome = "deferred"
-        # Razorpay handles it; do not count as a recovery attempt
 
     elif action == "stop":
         outcome = "stopped"
@@ -119,15 +173,21 @@ def handle_webhook(payload: WebhookPayload):
         reasoning=reasoning,
         outcome=outcome,
         amount_inr=amount_inr,
+        razorpay_payment_link_id=razorpay_payment_link_id,
+        razorpay_short_url=razorpay_short_url,
     )
 
-    return {
+    response = {
         "subscription_id": subscription_id,
         "action": action,
         "channel": channel,
         "reasoning": reasoning,
         "outcome": outcome,
     }
+    if payment_link_url:
+        response["payment_link_url"] = payment_link_url
+
+    return response
 
 
 @app.get("/audit/{subscription_id}")

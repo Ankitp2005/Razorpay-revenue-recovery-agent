@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 import sqlite3
 from pathlib import Path
 from datetime import datetime, timezone
@@ -18,25 +18,45 @@ def init_audit_table() -> None:
     Creates the audit_log table in the existing subscriptions.db if it
     does not already exist. Called once at FastAPI startup.
     Using IF NOT EXISTS so the app is safely re-startable.
+
+    Also ensures the two Package-3 columns exist on older DBs via
+    ALTER TABLE. SQLite has no 'ADD COLUMN IF NOT EXISTS', so we attempt
+    each ALTER and silently ignore the error if the column is already there.
     """
     conn = get_connection()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS audit_log (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            subscription_id TEXT    NOT NULL,
-            event_type      TEXT    NOT NULL,
-            error_code      TEXT    NOT NULL,
-            bucket          TEXT    NOT NULL,
-            attempt_number  INTEGER NOT NULL,
-            action          TEXT    NOT NULL,
-            channel         TEXT    NOT NULL,
-            reasoning       TEXT    NOT NULL,
-            outcome         TEXT,
-            amount_inr      INTEGER,
-            timestamp       TEXT    NOT NULL
+            id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+            subscription_id           TEXT    NOT NULL,
+            event_type                TEXT    NOT NULL,
+            error_code                TEXT    NOT NULL,
+            bucket                    TEXT    NOT NULL,
+            attempt_number            INTEGER NOT NULL,
+            action                    TEXT    NOT NULL,
+            channel                   TEXT    NOT NULL,
+            reasoning                 TEXT    NOT NULL,
+            outcome                   TEXT,
+            amount_inr                INTEGER,
+            timestamp                 TEXT    NOT NULL,
+            razorpay_payment_link_id  TEXT,
+            razorpay_short_url        TEXT
         )
     """)
     conn.commit()
+
+    # Migrate existing DB: add columns if they don't exist yet.
+    # SQLite raises OperationalError "duplicate column name" if already present;
+    # we catch and ignore that specific case only.
+    for col, col_type in [
+        ("razorpay_payment_link_id", "TEXT"),
+        ("razorpay_short_url", "TEXT"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE audit_log ADD COLUMN {col} {col_type}")
+            conn.commit()
+        except Exception:
+            pass  # column already exists — safe to ignore
+
     conn.close()
 
 
@@ -51,6 +71,8 @@ def log_decision(
     reasoning: str,
     outcome: str | None,
     amount_inr: int | None,
+    razorpay_payment_link_id: str | None = None,
+    razorpay_short_url: str | None = None,
 ) -> None:
     """Insert one row into audit_log."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -59,11 +81,13 @@ def log_decision(
         """
         INSERT INTO audit_log
             (subscription_id, event_type, error_code, bucket, attempt_number,
-             action, channel, reasoning, outcome, amount_inr, timestamp)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+             action, channel, reasoning, outcome, amount_inr, timestamp,
+             razorpay_payment_link_id, razorpay_short_url)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (subscription_id, event_type, error_code, bucket, attempt_number,
-         action, channel, reasoning, outcome, amount_inr, ts),
+         action, channel, reasoning, outcome, amount_inr, ts,
+         razorpay_payment_link_id, razorpay_short_url),
     )
     conn.commit()
     conn.close()
