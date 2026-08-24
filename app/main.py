@@ -14,12 +14,19 @@ from app.dashboard import router as dashboard_router
 
 
 # ---------------------------------------------------------------------------
-# In-memory attempt tracker so the decision engine knows which recovery
-# attempt number we are on for each subscription.
-# Key: subscription_id  Value: int (number of recovery actions taken so far)
-# Reset on server restart -- fine for demo scale.
+# Attempt tracking is DB-backed (Package 5.2).
+#
+# current_attempt is derived at request-time by querying audit_log:
+#   • If any row for this subscription has outcome = 'recovered', return 999
+#     so the decision engine's attempt_number > 3 hard-cap fires and the
+#     handler emits 'stop' (mirrors the prior in-memory recovered sentinel).
+#   • Otherwise: COUNT(rows where subscription_id = ? AND outcome != 'recovered')
+#     + 1 for the current in-flight event.
+#
+# This means server restarts and manual test webhooks can NEVER corrupt a
+# batch run: the authoritative source of truth is always audit_log, which
+# replay_batch.py wipes with "DELETE FROM audit_log" at the start of each run.
 # ---------------------------------------------------------------------------
-_recovery_attempt_counter: dict[str, int] = {}
 
 # ---------------------------------------------------------------------------
 # Real Payment Link quota guard (Package 5).
@@ -42,8 +49,20 @@ _real_link_count: int = 0
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialise DB on startup."""
+    """Initialise DB on startup and compute effective quota."""
     db.init_audit_table()
+    
+    global REAL_LINK_QUOTA
+    try:
+        from app.razorpay_client import get_existing_link_count
+        actual_count = get_existing_link_count()
+        REAL_LINK_QUOTA = max(0, min(25, 30 - actual_count))
+        print(f"\nReal link quota this session: {REAL_LINK_QUOTA} ({actual_count} already used on account)\n")
+    except Exception as exc:
+        REAL_LINK_QUOTA = 0
+        print(f"\nWARNING: Failed to fetch existing payment links from Razorpay API: {exc}")
+        print("Falling back to safe default of 0 real links for this session.\n")
+        
     yield
 
 
@@ -108,7 +127,29 @@ def handle_webhook(payload: WebhookPayload):
 
     bucket = classify_error(error_code)
 
-    current_attempt = _recovery_attempt_counter.get(subscription_id, 0) + 1
+    # ------------------------------------------------------------------ #
+    # DB-backed attempt number (Package 5.2 fix).                        #
+    #                                                                     #
+    # Read directly from audit_log so the value is always consistent     #
+    # with what is persisted — immune to server restarts and manual       #
+    # test webhooks that previously silently inflated the in-memory dict. #
+    # ------------------------------------------------------------------ #
+    _attempt_conn = db.get_connection()
+    _recovered_sentinel = _attempt_conn.execute(
+        "SELECT 1 FROM audit_log WHERE subscription_id = ? AND outcome = 'recovered' LIMIT 1",
+        (subscription_id,),
+    ).fetchone()
+    if _recovered_sentinel:
+        current_attempt = 999  # force 'stop' via the hard-cap rule
+    else:
+        _prior_count = _attempt_conn.execute(
+            "SELECT COUNT(*) FROM audit_log "
+            "WHERE subscription_id = ? AND outcome != 'recovered'",
+            (subscription_id,),
+        ).fetchone()[0]
+        current_attempt = _prior_count + 1
+    _attempt_conn.close()
+
 
     decision = decide_action(event_type, bucket, current_attempt, subscription)
     action = decision["action"]
@@ -191,10 +232,8 @@ def handle_webhook(payload: WebhookPayload):
         recovered = simulate_recovery_outcome(bucket)
         if recovered:
             outcome = "recovered"
-            _recovery_attempt_counter[subscription_id] = 999
         else:
             outcome = "failed"
-            _recovery_attempt_counter[subscription_id] = current_attempt
 
     elif action == "escalate_to_human":
         outcome = "escalated"
