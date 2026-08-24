@@ -1,4 +1,4 @@
-﻿"""
+"""
 replay_batch.py
 ===============
 Standalone script that reads all 65 subscriptions from subscriptions.db
@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
+import time
 from pathlib import Path
 
 try:
@@ -144,6 +145,7 @@ def main():
     # ---- Replay ------------------------------------------------------------
     ok_count = 0
     err_count = 0
+    sub_count = 0
 
     for sub in subs:
         sid = sub["subscription_id"]
@@ -171,6 +173,12 @@ def main():
             except Exception as exc:
                 err_count += 1
                 print(f"  [ERR] {sid} attempt {attempt['attempt_number']}: {exc}")
+
+            time.sleep(0.3)  # rate-limit pacing: avoid hammering Razorpay API
+
+        sub_count += 1
+        if sub_count % 10 == 0:
+            print(f"  --- Processed {sub_count}/{len(subs)} subscriptions ---")
 
     print(f"\nReplay complete: {ok_count} OK, {err_count} errors")
 

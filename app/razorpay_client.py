@@ -12,6 +12,7 @@ fails loudly at startup, not silently at call time.
 from __future__ import annotations
 
 import os
+import time
 import requests
 from dotenv import load_dotenv
 
@@ -71,7 +72,7 @@ def create_recovery_payment_link(
             "sms": False,
             "email": False,
         },
-        "reference_id": subscription_id,
+        "reference_id": f"{subscription_id}_{int(time.time())}",
     }
 
     try:

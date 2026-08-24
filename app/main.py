@@ -9,6 +9,7 @@ from app.decision_engine import decide_action
 from app.recovery_simulator import simulate_recovery_outcome
 from app.razorpay_client import create_recovery_payment_link
 from app import db
+from app.dashboard import router as dashboard_router
 
 
 # ---------------------------------------------------------------------------
@@ -38,6 +39,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.include_router(dashboard_router)
 
 @app.post("/webhook/razorpay")
 def handle_webhook(payload: WebhookPayload):
