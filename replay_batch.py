@@ -26,7 +26,7 @@ except ImportError:
     print("ERROR: requests library not found. Run: pip install requests")
     sys.exit(1)
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:8001"
 DB_PATH = Path("data/subscriptions.db")
 WEBHOOK_URL = f"{BASE_URL}/webhook/razorpay"
 SUMMARY_URL = f"{BASE_URL}/summary"
