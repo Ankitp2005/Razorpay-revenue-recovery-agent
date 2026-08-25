@@ -28,41 +28,13 @@ from app.dashboard import router as dashboard_router
 # replay_batch.py wipes with "DELETE FROM audit_log" at the start of each run.
 # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Real Payment Link quota guard (Package 5).
-#
-# Razorpay test mode hard-caps total Payment Link creation at 30 per
-# business account.  Our batch can generate ~43 active-attempt events per
-# run, so without a cap we reliably hit 429 RATE_LIMIT_EXCEEDED on the
-# tail requests.
-#
-# REAL_LINK_QUOTA  – maximum real Razorpay API calls per server lifetime.
-#                    Configurable via env var; defaults to 25 so there is a
-#                    5-link safety buffer under the 30-link hard cap.
-# _real_link_count – how many real links this process has successfully
-#                    created.  Incremented only on API success.
-#                    Resets to 0 on server restart.
-# ---------------------------------------------------------------------------
-REAL_LINK_QUOTA: int = int(os.getenv("REAL_LINK_QUOTA", "25"))
-_real_link_count: int = 0
+_real_links_disabled: bool = False
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialise DB on startup and compute effective quota."""
+    """Initialise DB on startup."""
     db.init_audit_table()
-    
-    global REAL_LINK_QUOTA
-    try:
-        from app.razorpay_client import get_existing_link_count
-        actual_count = get_existing_link_count()
-        REAL_LINK_QUOTA = max(0, min(25, 30 - actual_count))
-        print(f"\nReal link quota this session: {REAL_LINK_QUOTA} ({actual_count} already used on account)\n")
-    except Exception as exc:
-        REAL_LINK_QUOTA = 0
-        print(f"\nWARNING: Failed to fetch existing payment links from Razorpay API: {exc}")
-        print("Falling back to safe default of 0 real links for this session.\n")
-        
     yield
 
 
@@ -190,16 +162,16 @@ def handle_webhook(payload: WebhookPayload):
         )
 
         # ---------------------------------------------------------------- #
-        # Step 5b — real Razorpay Payment Link API call, quota-guarded.   #
+        # Step 5b — real Razorpay Payment Link API call with circuit       #
+        # breaker.                                                         #
         #                                                                  #
-        # Primary defence against Razorpay test-mode's 30-link hard cap:  #
-        # stop calling the real API once REAL_LINK_QUOTA successes have    #
-        # been recorded this server process lifetime.  The existing 429    #
-        # handler below is kept as a secondary safety net.                 #
+        # Primary defence against Razorpay test-mode's 30-link hard cap:   #
+        # stop calling the real API once a RATE_LIMIT_EXCEEDED error is    #
+        # hit.                                                             #
         # ---------------------------------------------------------------- #
-        global _real_link_count
+        global _real_links_disabled
 
-        if _real_link_count < REAL_LINK_QUOTA:
+        if not _real_links_disabled:
             link_result = create_recovery_payment_link(
                 customer_name=customer_name,
                 customer_phone=customer_phone,
@@ -212,18 +184,14 @@ def handle_webhook(payload: WebhookPayload):
                 razorpay_payment_link_id = link_result["payment_link_id"]
                 razorpay_short_url = link_result["short_url"]
                 payment_link_url = razorpay_short_url
-                _real_link_count += 1          # count only confirmed successes
             else:
-                # Real API call failed — note it, but keep going.
-                # (Secondary safety net; primary is the quota guard above.)
-                reasoning = reasoning + f" [LINK CREATION FAILED: {link_result['error']}]"
+                if "RATE_LIMIT_EXCEEDED" in link_result["error"] or "429" in link_result["error"]:
+                    _real_links_disabled = True
+                    reasoning += " [Real link creation disabled for remainder of session: Razorpay test-mode cap reached.]"
+                else:
+                    reasoning += f" [LINK CREATION FAILED: {link_result['error']}]"
         else:
-            # Quota exhausted — skip the real API call entirely.
-            reasoning = reasoning + (
-                f" [Real payment link creation skipped: this run's demo-safe"
-                f" quota of {REAL_LINK_QUOTA} real Razorpay test links has been"
-                f" reached; remaining attempts use simulated outcomes only.]"
-            )
+            reasoning += " [Real link creation disabled for remainder of session: Razorpay test-mode cap reached.]"
 
         # ---------------------------------------------------------------- #
         # Step 5c — simulate synthetic "did customer pay" outcome.         #
