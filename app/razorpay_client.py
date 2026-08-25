@@ -41,6 +41,32 @@ _PAYMENT_LINKS_URL = "https://api.razorpay.com/v1/payment_links"
 _TIMEOUT_SECONDS = 5
 
 
+def get_existing_link_count() -> int:
+    """
+    Fetch all existing payment links from the Razorpay API, handling pagination,
+    and return the total count.
+    Used on startup to compute effective remaining quota.
+    """
+    total = 0
+    params = {"count": 100, "skip": 0}
+    
+    while True:
+        resp = requests.get(
+            _PAYMENT_LINKS_URL,
+            auth=(_KEY_ID, _KEY_SECRET),
+            params=params,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        items = resp.json().get("items", [])
+        total += len(items)
+        if len(items) < params["count"]:
+            break
+        params["skip"] += params["count"]
+        
+    return total
+
+
 def create_recovery_payment_link(
     customer_name: str,
     customer_phone: str,
