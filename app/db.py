@@ -39,7 +39,8 @@ def init_audit_table() -> None:
             amount_inr                INTEGER,
             timestamp                 TEXT    NOT NULL,
             razorpay_payment_link_id  TEXT,
-            razorpay_short_url        TEXT
+            razorpay_short_url        TEXT,
+            confirmed_real_payment_id TEXT
         )
     """)
     conn.commit()
@@ -50,6 +51,7 @@ def init_audit_table() -> None:
     for col, col_type in [
         ("razorpay_payment_link_id", "TEXT"),
         ("razorpay_short_url", "TEXT"),
+        ("confirmed_real_payment_id", "TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE audit_log ADD COLUMN {col} {col_type}")

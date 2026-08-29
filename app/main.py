@@ -262,3 +262,65 @@ def get_summary():
     Field names are contractually stable; downstream code depends on them.
     """
     return db.get_summary_data()
+
+@app.post("/webhook/razorpay/payment-link-paid")
+def handle_payment_link_paid(body: dict):
+    event = body.get("event")
+    
+    if event != "payment_link.paid":
+        return {"status": "ignored", "reason": "not payment_link.paid event"}
+        
+    try:
+        reference_id = body["payload"]["payment_link"]["entity"].get("reference_id")
+        real_payment_id = body["payload"]["payment"]["entity"].get("id")
+        amount_paid = body["payload"]["payment_link"]["entity"].get("amount_paid")
+    except (KeyError, TypeError) as exc:
+        print(f"Warning: missing expected structure in payment_link.paid webhook: {exc}")
+        return {"status": "ignored", "reason": "missing expected structure"}
+        
+    if not reference_id or "_" not in str(reference_id):
+        print(f"Warning: missing or malformed reference_id: {reference_id}")
+        return {"status": "ignored", "reason": "missing or malformed reference_id"}
+        
+    subscription_id = str(reference_id).rsplit("_", 1)[0]
+    
+    conn = db.get_connection()
+    row = conn.execute(
+        "SELECT * FROM audit_log WHERE subscription_id = ? ORDER BY id DESC LIMIT 1", 
+        (subscription_id,)
+    ).fetchone()
+    
+    if not row:
+        print(f"Warning: no audit_log row found for subscription {subscription_id}")
+        conn.close()
+        return {"status": "ignored", "reason": f"no audit_log for {subscription_id}"}
+        
+    row_id = row["id"]
+    old_reasoning = row["reasoning"]
+    
+    from datetime import datetime, timezone
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    
+    new_reasoning = f"{old_reasoning} [CONFIRMED via real Razorpay payment pay_id={real_payment_id} at {ts} — this is a genuine payment confirmation, not a simulated outcome.]"
+    
+    conn.execute(
+        """
+        UPDATE audit_log
+        SET outcome = 'recovered', 
+            confirmed_real_payment_id = ?,
+            reasoning = ?
+        WHERE id = ?
+        """,
+        (real_payment_id, new_reasoning, row_id)
+    )
+    conn.commit()
+    conn.close()
+    
+    return {
+        "status": "updated",
+        "subscription_id": subscription_id,
+        "row_id": row_id,
+        "outcome": "recovered",
+        "confirmed_real_payment_id": real_payment_id
+    }
+

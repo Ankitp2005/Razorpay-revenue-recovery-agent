@@ -410,6 +410,16 @@
           linkHtml = `<a href="${r.razorpay_short_url}" target="_blank" class="payment-link">View payment link ↗</a>`;
         }
 
+        let outcomeBadges = '';
+        if (r.outcome) {
+          outcomeBadges += badge(r.outcome, outCls);
+        } else {
+          outcomeBadges += '—';
+        }
+        if (r.confirmed_real_payment_id) {
+          outcomeBadges += ' ' + badge('REAL PAYMENT CONFIRMED', 'badge-recovered');
+        }
+
         html += `
           <tr class="audit-row-main hover:bg-[rgba(0,0,0,0.02)]">
             <td class="mono text-[var(--muted)]">${ts}</td>
@@ -418,7 +428,7 @@
             <td>${r.action}</td>
             <td class="text-right mono">${r.attempt_number}</td>
             <td class="text-right mono">${amt}</td>
-            <td>${r.outcome ? badge(r.outcome, outCls) : '—'}</td>
+            <td>${outcomeBadges}</td>
           </tr>
           <tr class="audit-row-details hover:bg-[rgba(0,0,0,0.02)]">
             <td colspan="7" class="border-b border-[var(--line)]">
