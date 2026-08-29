@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from app.webhook_security import verify_razorpay_signature
 
 from app.schemas import WebhookPayload
 from app.classifier import classify_error
@@ -52,7 +53,7 @@ app = FastAPI(
 app.include_router(dashboard_router)
 
 @app.post("/webhook/razorpay")
-def handle_webhook(payload: WebhookPayload):
+async def handle_webhook(request: Request):
     """
     Main entry point for Razorpay webhook events.
 
@@ -73,7 +74,49 @@ def handle_webhook(payload: WebhookPayload):
       6. Write one audit_log row (including link id/url if created).
       7. Return the decision JSON (including payment_link_url if created).
     """
+    raw_body = await request.body()
+    signature = request.headers.get("x-razorpay-signature", "")
+    event_id = request.headers.get("x-razorpay-event-id") or request.headers.get("request-id")
+    
+    secret = os.getenv("RAZORPAY_WEBHOOK_SECRET")
+    if secret and secret != "<placeholder>":
+        if not verify_razorpay_signature(raw_body, signature, secret):
+            try:
+                body_json = await request.json()
+                sub_entity = body_json.get("payload", {}).get("subscription", {}).get("entity", {})
+                subscription_id = sub_entity.get("subscription_id") or sub_entity.get("id") or "unknown"
+                event_type = body_json.get("event", "unknown")
+            except Exception:
+                subscription_id = "unknown"
+                event_type = "unknown"
+            
+            db.log_decision(
+                subscription_id=subscription_id,
+                event_type=event_type,
+                error_code="unknown",
+                bucket="unknown",
+                attempt_number=0,
+                action="none",
+                channel="none",
+                reasoning="Webhook signature verification failed.",
+                outcome="signature_rejected",
+                amount_inr=0,
+                razorpay_event_id=event_id
+            )
+            raise HTTPException(status_code=401, detail="Invalid signature")
+    else:
+        print("Warning: RAZORPAY_WEBHOOK_SECRET is not set. Signature verification disabled.")
+
+    if event_id:
+        conn = db.get_connection()
+        existing = conn.execute("SELECT 1 FROM audit_log WHERE razorpay_event_id = ?", (event_id,)).fetchone()
+        conn.close()
+        if existing:
+            return {"status": "ignored", "reason": "duplicate event, already processed"}
+
     try:
+        body_json = await request.json()
+        payload = WebhookPayload(**body_json)
         sub_entity = payload.payload.subscription.entity
         pay_entity = payload.payload.payment.entity
         event_type = payload.event
@@ -225,6 +268,7 @@ def handle_webhook(payload: WebhookPayload):
         amount_inr=amount_inr,
         razorpay_payment_link_id=razorpay_payment_link_id,
         razorpay_short_url=razorpay_short_url,
+        razorpay_event_id=event_id,
     )
 
     response = {
@@ -264,7 +308,30 @@ def get_summary():
     return db.get_summary_data()
 
 @app.post("/webhook/razorpay/payment-link-paid")
-def handle_payment_link_paid(body: dict):
+async def handle_payment_link_paid(request: Request):
+    raw_body = await request.body()
+    signature = request.headers.get("x-razorpay-signature", "")
+    event_id = request.headers.get("x-razorpay-event-id") or request.headers.get("request-id")
+    
+    secret = os.getenv("RAZORPAY_WEBHOOK_SECRET")
+    if secret and secret != "<placeholder>":
+        if not verify_razorpay_signature(raw_body, signature, secret):
+            raise HTTPException(status_code=401, detail="Invalid signature")
+    else:
+        print("Warning: RAZORPAY_WEBHOOK_SECRET is not set. Signature verification disabled.")
+
+    if event_id:
+        conn = db.get_connection()
+        existing = conn.execute("SELECT 1 FROM audit_log WHERE razorpay_event_id = ?", (event_id,)).fetchone()
+        conn.close()
+        if existing:
+            return {"status": "ignored", "reason": "duplicate event, already processed"}
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Malformed payload")
+        
     event = body.get("event")
     
     if event != "payment_link.paid":
@@ -308,10 +375,11 @@ def handle_payment_link_paid(body: dict):
         UPDATE audit_log
         SET outcome = 'recovered', 
             confirmed_real_payment_id = ?,
-            reasoning = ?
+            reasoning = ?,
+            razorpay_event_id = ?
         WHERE id = ?
         """,
-        (real_payment_id, new_reasoning, row_id)
+        (real_payment_id, new_reasoning, event_id, row_id)
     )
     conn.commit()
     conn.close()

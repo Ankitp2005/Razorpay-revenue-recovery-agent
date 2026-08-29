@@ -40,7 +40,8 @@ def init_audit_table() -> None:
             timestamp                 TEXT    NOT NULL,
             razorpay_payment_link_id  TEXT,
             razorpay_short_url        TEXT,
-            confirmed_real_payment_id TEXT
+            confirmed_real_payment_id TEXT,
+            razorpay_event_id         TEXT
         )
     """)
     conn.commit()
@@ -52,12 +53,20 @@ def init_audit_table() -> None:
         ("razorpay_payment_link_id", "TEXT"),
         ("razorpay_short_url", "TEXT"),
         ("confirmed_real_payment_id", "TEXT"),
+        ("razorpay_event_id", "TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE audit_log ADD COLUMN {col} {col_type}")
             conn.commit()
         except Exception:
             pass  # column already exists — safe to ignore
+
+    # Migrate subscriptions table for contact_consent
+    try:
+        conn.execute("ALTER TABLE subscriptions ADD COLUMN contact_consent BOOLEAN DEFAULT 1")
+        conn.commit()
+    except Exception:
+        pass
 
     conn.close()
 
@@ -75,6 +84,7 @@ def log_decision(
     amount_inr: int | None,
     razorpay_payment_link_id: str | None = None,
     razorpay_short_url: str | None = None,
+    razorpay_event_id: str | None = None,
 ) -> None:
     """Insert one row into audit_log."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -84,12 +94,12 @@ def log_decision(
         INSERT INTO audit_log
             (subscription_id, event_type, error_code, bucket, attempt_number,
              action, channel, reasoning, outcome, amount_inr, timestamp,
-             razorpay_payment_link_id, razorpay_short_url)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+             razorpay_payment_link_id, razorpay_short_url, razorpay_event_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (subscription_id, event_type, error_code, bucket, attempt_number,
          action, channel, reasoning, outcome, amount_inr, ts,
-         razorpay_payment_link_id, razorpay_short_url),
+         razorpay_payment_link_id, razorpay_short_url, razorpay_event_id),
     )
     conn.commit()
     conn.close()

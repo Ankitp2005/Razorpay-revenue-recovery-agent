@@ -214,6 +214,9 @@ def generate_subscriptions():
         total_count = 12
         paid_count = random.randint(0, 8)
 
+        # ASSUMPTION: Real-world consent-opt-out rate is ~10%. This is an illustrative assumption.
+        contact_consent = random.random() < 0.90
+        
         sub = {
             "subscription_id":         sub_id,
             "customer_id":             cust_id,
@@ -227,6 +230,7 @@ def generate_subscriptions():
             "total_count":             total_count,
             "paid_count":              paid_count,
             "current_status":          status,
+            "contact_consent":         contact_consent,
         }
         subscriptions.append(sub)
 
@@ -283,7 +287,8 @@ def create_db(subscriptions, payment_attempts):
             subscription_start_date TEXT NOT NULL,
             total_count             INTEGER,
             paid_count              INTEGER NOT NULL,
-            current_status          TEXT NOT NULL
+            current_status          TEXT NOT NULL,
+            contact_consent         BOOLEAN NOT NULL
         );
 
         CREATE TABLE payment_attempts (
@@ -303,7 +308,7 @@ def create_db(subscriptions, payment_attempts):
         """INSERT INTO subscriptions VALUES
            (:subscription_id, :customer_id, :customer_name, :customer_phone,
             :plan_name, :plan_amount_inr, :billing_frequency, :mandate_type,
-            :subscription_start_date, :total_count, :paid_count, :current_status)""",
+            :subscription_start_date, :total_count, :paid_count, :current_status, :contact_consent)""",
         subscriptions,
     )
 
@@ -372,6 +377,18 @@ def print_report(subscriptions, payment_attempts):
     print(f"  Database written to : {DB_PATH.resolve()}")
     print("=" * 70)
 
+
+
+def migrate_existing_db():
+    if DB_PATH.exists():
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            conn.execute("ALTER TABLE subscriptions ADD COLUMN contact_consent BOOLEAN DEFAULT 1")
+            conn.commit()
+            print("Migrated existing subscriptions table to add contact_consent.")
+        except Exception as e:
+            pass
+        conn.close()
 
 # -- Entry point ---------------------------------------------------------------
 

@@ -1,7 +1,7 @@
 ﻿from __future__ import annotations
 
 
-def decide_action(
+def _decide_action_internal(
     event_type: str,
     bucket: str,
     attempt_number: int,
@@ -158,3 +158,22 @@ def decide_action(
             "Defaulting to human escalation to avoid taking an incorrect automated action."
         ),
     }
+
+
+def decide_action(
+    event_type: str,
+    bucket: str,
+    attempt_number: int,
+    subscription: dict,
+) -> dict:
+    decision = _decide_action_internal(event_type, bucket, attempt_number, subscription)
+    
+    if decision["action"] in ("send_recovery_link", "send_nudge", "send_card_update_link"):
+        contact_consent = subscription.get("contact_consent", True)
+        if not contact_consent:
+            sub_id = subscription.get("subscription_id", "unknown")
+            decision["action"] = "escalate_to_human"
+            decision["channel"] = "none"
+            decision["reasoning"] += f" [CONSENT OVERRIDE: Subscription {sub_id} does not have contact consent. Automated outreach skipped; escalated to human.]"
+            
+    return decision
