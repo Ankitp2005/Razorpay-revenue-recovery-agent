@@ -3,213 +3,427 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Razorpay Recovery Agent — Dashboard</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <title>Revenue Recovery Agent — Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;600&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
+    /* ── DESIGN TOKENS ─────────────────────────────────────── */
     :root {
-      --paper: #F7F7F5;
-      --ink: #12141A;
-      --accent: #1E3A8A;
-      --risk: #B54708;
-      --recovered: #166534;
-      --line: #D6D3CE;
-      --muted: #6B7280;
+      --bg:              #FFFFFF;
+      --ink:             #000000;
+      --accent-primary:  #FFE600;
+      --accent-link:     #0047FF;
+      --success:         #00FF66;
+      --danger:          #FF3B30;
+      --border-width:    3px;
+      --shadow:          6px 6px 0px #000000;
+      --shadow-hover:    4px 4px 0px #000000;
+      --shadow-active:   2px 2px 0px #000000;
+    }
+
+    /* ── RESET / BASE ──────────────────────────────────────── */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      border-radius: 0 !important;   /* ZERO border-radius, everywhere */
     }
 
     body {
-      background-color: var(--paper);
+      background-color: var(--bg);
       color: var(--ink);
-      font-family: 'Public Sans', sans-serif;
+      font-family: 'Space Grotesk', sans-serif;
       font-size: 14px;
       line-height: 1.5;
     }
 
-    h1, h2, h3, .newsreader {
-      font-family: 'Newsreader', serif;
+    /* ── TYPOGRAPHY ────────────────────────────────────────── */
+    .font-archivo { font-family: 'Archivo Black', sans-serif; }
+    .font-mono    { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+
+    /* ── LAYOUT ────────────────────────────────────────────── */
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 4rem;
+    }
+
+    /* ── HEADER ────────────────────────────────────────────── */
+    .site-header {
+      border-bottom: var(--border-width) solid var(--ink);
+      padding-bottom: 1.25rem;
+      margin-bottom: 2rem;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .site-title {
+      font-family: 'Archivo Black', sans-serif;
+      font-size: clamp(2rem, 5vw, 3.25rem);
+      text-transform: uppercase;
+      color: var(--ink);
+      line-height: 1;
+      letter-spacing: -1px;
+    }
+
+    .site-subtitle {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--ink);
+      margin-top: 0.35rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-shrink: 0;
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      border: var(--border-width) solid var(--ink);
+      padding: 0.35rem 0.75rem;
+      box-shadow: var(--shadow);
+      transition: box-shadow 80ms, transform 80ms;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      background: var(--success);
+      border: 2px solid var(--ink);
+      flex-shrink: 0;
+    }
+
+    .status-label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
       font-weight: 600;
     }
 
-    .mono {
-      font-family: 'IBM Plex Mono', monospace;
-      font-variant-numeric: tabular-nums;
-    }
-
-    /* Container and Layout */
-    .ledger-container {
-      max-width: 1280px;
-      margin: 0 auto;
-      padding: 2rem 1rem;
-    }
-
-    .border-line {
-      border-color: var(--line) !important;
-    }
-
-    /* Summary Strip */
-    .summary-strip {
-      display: flex;
-      border: 1px solid var(--line);
-      margin-bottom: 2rem;
-    }
-    
-    .summary-item {
-      flex: 1;
-      padding: 1.5rem;
-      border-right: 1px solid var(--line);
-    }
-    .summary-item:last-child {
-      border-right: none;
-    }
-
-    .summary-label {
-      font-family: 'Public Sans', sans-serif;
+    /* ── BUTTON ─────────────────────────────────────────────── */
+    .btn {
+      font-family: 'Archivo Black', sans-serif;
       font-size: 0.75rem;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--muted);
-      margin-bottom: 0.5rem;
+      letter-spacing: 0.06em;
+      color: var(--ink);
+      background: var(--accent-primary);
+      border: var(--border-width) solid var(--ink);
+      padding: 0.5rem 1.25rem;
+      cursor: pointer;
+      box-shadow: var(--shadow);
+      transform: translate(0, 0);
+      transition: box-shadow 80ms, transform 80ms;
+    }
+    .btn:hover  { box-shadow: var(--shadow-hover);  transform: translate(-2px, -2px); }
+    .btn:active { box-shadow: var(--shadow-active); transform: translate(2px, 2px); }
+
+    /* ── SECTION HEADING ────────────────────────────────────── */
+    .section-heading {
+      font-family: 'Archivo Black', sans-serif;
+      font-size: 1.1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--ink);
+      margin-bottom: 1rem;
+      border-bottom: var(--border-width) solid var(--ink);
+      padding-bottom: 0.5rem;
+    }
+
+    /* ── SUMMARY STRIP ──────────────────────────────────────── */
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+      margin-bottom: 2.5rem;
+      border: var(--border-width) solid var(--ink);
+      box-shadow: var(--shadow);
+    }
+
+    .summary-block {
+      padding: 1.5rem 1.25rem 1.25rem;
+      border-right: var(--border-width) solid var(--ink);
+      background: var(--bg);
+      position: relative;
+    }
+    .summary-block:last-child { border-right: none; }
+    .summary-block.highlight  { background: var(--success); }
+
+    .summary-label {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--ink);
+      margin-bottom: 0.75rem;
     }
 
     .summary-value {
       font-family: 'IBM Plex Mono', monospace;
+      font-variant-numeric: tabular-nums;
       font-size: 2.25rem;
-      font-weight: 400;
+      font-weight: 600;
       color: var(--ink);
+      line-height: 1;
     }
 
-    /* Tables */
+    /* ── GRID (Charts + Breakdown) ──────────────────────────── */
+    .mid-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      margin-bottom: 2.5rem;
+    }
+    @media (max-width: 860px) { .mid-grid { grid-template-columns: 1fr; } }
+
+    /* ── TABLE (Bucket Breakdown) ───────────────────────────── */
     table {
       width: 100%;
       border-collapse: collapse;
-      border: 1px solid var(--line);
+      border: var(--border-width) solid var(--ink);
     }
 
     th {
-      font-family: 'Public Sans', sans-serif;
-      font-size: 0.75rem;
+      font-family: 'Archivo Black', sans-serif;
+      font-size: 0.7rem;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--muted);
-      font-weight: 500;
-      border-bottom: 1px solid var(--line);
-      padding: 0.75rem 1rem;
+      letter-spacing: 0.06em;
+      color: var(--bg);
+      background: var(--ink);
+      padding: 0.65rem 0.85rem;
       text-align: left;
-      background: var(--paper);
+      border-right: var(--border-width) solid var(--bg);
     }
+    th:last-child { border-right: none; }
 
     td {
-      padding: 0.75rem 1rem;
-      border-bottom: 1px solid var(--line);
+      font-family: 'Space Grotesk', sans-serif;
+      padding: 0.6rem 0.85rem;
+      border-bottom: var(--border-width) solid var(--ink);
+      border-right: var(--border-width) solid var(--ink);
+      vertical-align: top;
     }
+    td:last-child { border-right: none; }
+    tr:last-child td { border-bottom: none; }
+
+    tr:hover td { background: rgba(255, 230, 0, 0.15); }
 
     .text-right { text-align: right; }
-    
-    /* Badges */
+
+    /* ── CHART CONTAINERS ───────────────────────────────────── */
+    .charts-col {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .chart-wrap {
+      border: var(--border-width) solid var(--ink);
+      box-shadow: var(--shadow);
+      padding: 1rem 1rem 0.75rem;
+      background: var(--bg);
+    }
+
+    .chart-title {
+      font-family: 'Archivo Black', sans-serif;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--ink);
+      margin-bottom: 0.75rem;
+    }
+
+    /* ── BADGES ─────────────────────────────────────────────── */
     .badge {
       display: inline-block;
-      padding: 0.125rem 0.5rem;
-      font-size: 0.75rem;
-      font-weight: 500;
-      border-radius: 2px;
-      border: 1px solid var(--line);
+      padding: 0.15rem 0.5rem;
+      font-family: 'Archivo Black', sans-serif;
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border: 2px solid var(--ink);
       background: transparent;
       color: var(--ink);
+      vertical-align: middle;
+      margin-right: 2px;
     }
-    .badge-recovered { color: var(--recovered); border-color: var(--recovered); }
-    .badge-escalated, .badge-failed { color: var(--risk); border-color: var(--risk); }
-    
-    /* Audit Log specific */
-    .audit-row-main td {
-      border-bottom: none;
-      padding-bottom: 0.25rem;
+    .badge-recovered {
+      background: var(--success);
+      color: var(--ink);
+      border-color: var(--ink);
     }
+    .badge-escalated,
+    .badge-failed {
+      background: var(--danger);
+      color: #fff;
+      border-color: var(--ink);
+    }
+    .badge-sms {
+      background: var(--accent-primary);
+      color: var(--ink);
+      border-color: var(--ink);
+    }
+    .badge-real-pay {
+      background: var(--accent-link);
+      color: #fff;
+      border-color: var(--ink);
+    }
+
+    /* ── AUDIT LOG ──────────────────────────────────────────── */
+    .audit-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .filter-input {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--ink);
+      background: var(--bg);
+      border: var(--border-width) solid var(--ink);
+      padding: 0.45rem 0.85rem;
+      width: 18rem;
+      outline: none;
+      box-shadow: var(--shadow);
+      transition: box-shadow 80ms, transform 80ms;
+    }
+    .filter-input::placeholder { color: #555; font-weight: 400; }
+    .filter-input:focus { box-shadow: var(--shadow-hover); transform: translate(-1px, -1px); }
+
+    .audit-scroll {
+      border: var(--border-width) solid var(--ink);
+      box-shadow: var(--shadow);
+      overflow-y: auto;
+      max-height: 620px;
+    }
+
+    .audit-scroll table {
+      border: none;
+    }
+
+    .audit-scroll thead {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .audit-row-main td { border-bottom: none; padding-bottom: 0.2rem; }
     .audit-row-details td {
-      padding-top: 0.25rem;
-      padding-bottom: 1rem;
+      padding-top: 0.2rem;
+      padding-bottom: 0.85rem;
     }
+
     .reasoning-text {
-      color: var(--muted);
-      font-size: 0.875rem;
-      padding-left: 1rem;
-      border-left: 2px solid var(--line);
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.82rem;
+      color: #333;
+      padding-left: 0.85rem;
+      border-left: var(--border-width) solid var(--ink);
       margin-top: 0.25rem;
     }
+
+    /* ── PAYMENT LINK ───────────────────────────────────────── */
     .payment-link {
       display: inline-flex;
       align-items: center;
-      gap: 0.25rem;
-      color: var(--accent);
-      font-family: 'Public Sans', sans-serif;
+      gap: 0.3rem;
+      font-family: 'Space Grotesk', sans-serif;
       font-size: 0.75rem;
-      font-weight: 600;
+      font-weight: 700;
+      color: var(--bg);
+      background: var(--accent-link);
       text-decoration: none;
-      border: 1px dashed var(--accent);
-      padding: 0.25rem 0.5rem;
-      border-radius: 2px;
+      border: 2px solid var(--ink);
+      padding: 0.25rem 0.65rem;
       margin-top: 0.5rem;
+      box-shadow: 3px 3px 0px var(--ink);
+      transform: translate(0, 0);
+      transition: box-shadow 80ms, transform 80ms;
     }
-    .payment-link:hover {
-      background-color: rgba(30, 58, 138, 0.05);
+    .payment-link:hover  { box-shadow: 1px 1px 0px var(--ink); transform: translate(2px, 2px); }
+    .payment-link:active { box-shadow: none; transform: translate(3px, 3px); }
+
+    /* ── FOOTER COUNT ───────────────────────────────────────── */
+    .audit-count {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--ink);
+      margin-top: 0.6rem;
+      text-align: right;
     }
 
-    .status-square {
-      width: 10px;
-      height: 10px;
-      background-color: var(--recovered);
-      display: inline-block;
-      margin-right: 0.5rem;
-    }
+    /* ── UTILITIES ──────────────────────────────────────────── */
+    .mono { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+    .mt-2 { margin-top: 0.5rem; }
+    .mb-8 { margin-bottom: 2rem; }
   </style>
 </head>
 <body>
 
-  <div class="ledger-container">
-    
-    <!-- Header -->
-    <header class="flex items-center justify-between mb-8">
+  <div class="container">
+
+    <!-- ── HEADER ──────────────────────────────────────────── -->
+    <header class="site-header">
       <div>
-        <h1 class="text-3xl text-[var(--ink)] newsreader">Revenue Recovery Agent</h1>
-        <p class="text-sm text-[var(--muted)]">Razorpay Buildathon &middot; Live Statement</p>
+        <h1 class="site-title">Revenue Recovery Agent</h1>
+        <p class="site-subtitle">Razorpay Buildathon &middot; Live Statement</p>
       </div>
-      <div class="flex items-center gap-4">
-        <div class="flex items-center">
-          <div id="status-square" class="status-square"></div>
-          <span id="status-text" class="text-xs text-[var(--muted)] uppercase tracking-widest">Live</span>
+      <div class="header-controls">
+        <div class="status-pill">
+          <div id="status-dot" class="status-dot"></div>
+          <span id="status-label" class="status-label">Live</span>
         </div>
-        <button onclick="refresh()" class="px-3 py-1 text-xs border border-[var(--line)] text-[var(--ink)] hover:bg-[#e5e5e0] transition rounded-sm">Refresh</button>
+        <button class="btn" onclick="refresh()">↻ Refresh</button>
       </div>
     </header>
 
-    <!-- Summary Strip -->
+    <!-- ── SUMMARY STRIP ────────────────────────────────────── -->
     <div class="summary-strip">
-      <div class="summary-item">
+      <div class="summary-block">
         <div class="summary-label">Processed</div>
-        <div id="kpi-processed" class="summary-value">—</div>
+        <div id="kpi-processed" class="summary-value mono">—</div>
       </div>
-      <div class="summary-item text-right">
+      <div class="summary-block">
         <div class="summary-label">At Risk</div>
-        <div id="kpi-at-risk" class="summary-value text-[var(--risk)]">—</div>
+        <div id="kpi-at-risk" class="summary-value mono">—</div>
       </div>
-      <div class="summary-item text-right">
+      <div class="summary-block highlight">
         <div class="summary-label">Recovered</div>
-        <div id="kpi-recovered" class="summary-value text-[var(--recovered)]">—</div>
+        <div id="kpi-recovered" class="summary-value mono">—</div>
       </div>
-      <div class="summary-item text-right">
+      <div class="summary-block">
         <div class="summary-label">Recovery Rate</div>
-        <div id="kpi-rate" class="summary-value">—</div>
+        <div id="kpi-rate" class="summary-value mono">—</div>
       </div>
     </div>
 
-    <!-- Charts and Breakdown -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-      
-      <!-- Breakdown Table -->
+    <!-- ── MID GRID: Breakdown + Charts ─────────────────────── -->
+    <div class="mid-grid">
+
+      <!-- Bucket Breakdown Table -->
       <div>
-        <h2 class="text-lg mb-4 text-[var(--ink)] newsreader">Failure Bucket Breakdown</h2>
+        <h2 class="section-heading">Failure Bucket Breakdown</h2>
         <table>
           <thead>
             <tr>
@@ -221,37 +435,40 @@
             </tr>
           </thead>
           <tbody id="bucket-table-body">
-            <tr><td colspan="5" class="text-center text-[var(--muted)] py-6">Loading...</td></tr>
+            <tr><td colspan="5" style="text-align:center;padding:1.5rem;color:#555;">Loading...</td></tr>
           </tbody>
         </table>
       </div>
 
       <!-- Charts -->
-      <div class="flex gap-4">
-        <div class="flex-1 border border-[var(--line)] p-4">
-          <h3 class="text-xs uppercase tracking-widest text-[var(--muted)] mb-4">Recovered Volume</h3>
-          <div class="flex justify-center">
-            <canvas id="donut-chart" style="max-height:180px;max-width:180px;"></canvas>
+      <div class="charts-col">
+        <div>
+          <h2 class="section-heading">Charts</h2>
+        </div>
+        <div class="chart-wrap">
+          <div class="chart-title">Recovered Volume</div>
+          <div style="display:flex;justify-content:center;">
+            <canvas id="donut-chart" style="max-height:160px;max-width:160px;"></canvas>
           </div>
         </div>
-        <div class="flex-1 border border-[var(--line)] p-4">
-          <h3 class="text-xs uppercase tracking-widest text-[var(--muted)] mb-4">Active Recovery %</h3>
-          <canvas id="bar-chart" style="max-height:180px;"></canvas>
+        <div class="chart-wrap">
+          <div class="chart-title">Active Recovery %</div>
+          <canvas id="bar-chart" style="max-height:160px;"></canvas>
         </div>
       </div>
 
     </div>
 
-    <!-- Audit Log -->
-    <div class="mb-8">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg text-[var(--ink)] newsreader">Audit Ledger</h2>
-        <input id="audit-search" oninput="filterAudit()" placeholder="Filter records..."
-          class="text-xs bg-transparent border border-[var(--line)] px-3 py-1.5 text-[var(--ink)] focus:outline-none focus:border-[var(--accent)] w-64 rounded-sm" />
+    <!-- ── AUDIT LOG ─────────────────────────────────────────── -->
+    <div>
+      <div class="audit-header">
+        <h2 class="section-heading" style="margin-bottom:0;border-bottom:none;">Audit Ledger</h2>
+        <input id="audit-search" class="filter-input" oninput="filterAudit()"
+               placeholder="Filter records..." autocomplete="off" />
       </div>
-      <div class="overflow-auto border border-[var(--line)] border-b-0" style="max-height: 600px;">
-        <table style="border:none;">
-          <thead style="position: sticky; top: 0; z-index: 10;">
+      <div class="audit-scroll">
+        <table>
+          <thead>
             <tr>
               <th>Timestamp</th>
               <th>Subscription</th>
@@ -263,37 +480,40 @@
             </tr>
           </thead>
           <tbody id="audit-table-body">
-            <tr><td colspan="7" class="text-center text-[var(--muted)] py-6 border-b border-[var(--line)]">Loading...</td></tr>
+            <tr><td colspan="7" style="text-align:center;padding:1.5rem;color:#555;border-bottom:none;">Loading...</td></tr>
           </tbody>
         </table>
       </div>
-      <div id="audit-count" class="text-xs text-[var(--muted)] mt-2 text-right"></div>
+      <div id="audit-count" class="audit-count"></div>
     </div>
-    
-  </div>
+
+  </div><!-- /container -->
 
 <script>
   let donutChart = null;
   let barChart   = null;
   let allAuditRows = [];
 
-  // Color tokens mapped for JS charts
+  // ── Color tokens (for Chart.js — must match CSS vars) ──────
   const T = {
-    paper: '#F7F7F5', ink: '#12141A', accent: '#1E3A8A',
-    risk: '#B54708', recovered: '#166534', line: '#D6D3CE', muted: '#6B7280'
+    bg:      '#FFFFFF',
+    ink:     '#000000',
+    primary: '#FFE600',
+    link:    '#0047FF',
+    success: '#00FF66',
+    danger:  '#FF3B30',
   };
 
-  // Derive chart colors systematically
   function getBucketColor(name, rate) {
-    if (name === 'risk_block') return T.risk;
-    if (rate >= 50) return T.recovered;
-    return T.accent;
+    if (name === 'risk_block') return T.danger;
+    if (rate >= 50) return T.success;
+    return T.primary;
   }
 
   const OUTCOME_CLASS = {
     recovered: 'badge-recovered',
     escalated: 'badge-escalated',
-    failed: 'badge-failed',
+    failed:    'badge-failed',
   };
 
   function fmt(n) {
@@ -305,9 +525,12 @@
     return `<span class="badge ${cls}">${text.toUpperCase()}</span>`;
   }
 
+  // ── Refresh ─────────────────────────────────────────────────
   async function refresh() {
-    document.getElementById('status-square').style.backgroundColor = T.risk;
-    document.getElementById('status-text').textContent = 'REFRESHING...';
+    const dot   = document.getElementById('status-dot');
+    const label = document.getElementById('status-label');
+    dot.style.background   = T.primary;
+    label.textContent      = 'REFRESHING…';
     try {
       const [summaryRes, auditRes] = await Promise.all([
         fetch('/summary'),
@@ -317,16 +540,16 @@
       if (!auditRes.ok)   throw new Error('audit '   + auditRes.status);
       renderSummary(await summaryRes.json());
       renderAudit(await auditRes.json());
-      
-      document.getElementById('status-square').style.backgroundColor = T.recovered;
-      document.getElementById('status-text').textContent = 'LIVE';
+      dot.style.background = T.success;
+      label.textContent    = 'LIVE';
     } catch(e) {
-      document.getElementById('status-square').style.backgroundColor = T.risk;
-      document.getElementById('status-text').textContent = 'ERROR';
+      dot.style.background = T.danger;
+      label.textContent    = 'ERROR';
       console.error(e);
     }
   }
 
+  // ── Summary + Breakdown + Charts ────────────────────────────
   function renderSummary(s) {
     document.getElementById('kpi-processed').textContent = s.total_subscriptions_processed ?? '—';
     document.getElementById('kpi-at-risk').textContent   = fmt(s.total_amount_at_risk_inr);
@@ -334,50 +557,81 @@
     document.getElementById('kpi-rate').textContent      = (s.recovery_rate_pct ?? 0) + '%';
 
     const buckets = s.breakdown_by_bucket || {};
-    
-    // Bucket table
-    const tbody = document.getElementById('bucket-table-body');
+    const tbody   = document.getElementById('bucket-table-body');
+
     if (!Object.keys(buckets).length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-[var(--muted)] py-4">No data yet</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:1rem;color:#555;">No data yet</td></tr>';
     } else {
-      tbody.innerHTML = Object.entries(buckets).sort((a,b) => b[1].total_events - a[1].total_events).map(([name, b]) => {
-        return `<tr>
-          <td class="font-medium">${name}</td>
+      tbody.innerHTML = Object.entries(buckets)
+        .sort((a, b) => b[1].total_events - a[1].total_events)
+        .map(([name, b]) => `<tr>
+          <td style="font-weight:700;">${name}</td>
           <td class="text-right mono">${b.total_events}</td>
           <td class="text-right mono">${b.active_attempts}</td>
           <td class="text-right mono">${b.recovered_count}</td>
           <td class="text-right mono">${b.active_recovery_rate_pct}%</td>
-        </tr>`;
-      }).join('');
+        </tr>`).join('');
     }
 
-    // Charts
+    // ── Charts ─────────────────────────────────────────────
     const names  = Object.keys(buckets);
     const recov  = names.map(k => buckets[k].recovered_count);
     const rates  = names.map(k => buckets[k].active_recovery_rate_pct);
     const colors = names.map(k => getBucketColor(k, buckets[k].active_recovery_rate_pct));
 
+    const monoFont = { family: 'IBM Plex Mono', size: 9 };
+
     if (donutChart) donutChart.destroy();
     donutChart = new Chart(document.getElementById('donut-chart').getContext('2d'), {
       type: 'doughnut',
-      data: { labels: names, datasets: [{ data: recov, backgroundColor: colors, borderWidth:1, borderColor: T.paper }] },
-      options: { plugins: { legend: { display: false } }, cutout:'60%' }
+      data: {
+        labels: names,
+        datasets: [{
+          data: recov,
+          backgroundColor: colors,
+          borderWidth: 3,
+          borderColor: T.ink,
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        cutout: '55%',
+      }
     });
 
     if (barChart) barChart.destroy();
     barChart = new Chart(document.getElementById('bar-chart').getContext('2d'), {
       type: 'bar',
-      data: { labels: names, datasets: [{ data: rates, backgroundColor: colors, borderRadius: 0 }] },
+      data: {
+        labels: names,
+        datasets: [{
+          data: rates,
+          backgroundColor: colors,
+          borderColor: T.ink,
+          borderWidth: 3,
+          borderRadius: 0,
+        }]
+      },
       options: {
         scales: {
-          x: { ticks:{color: T.muted, font:{family:'IBM Plex Mono', size:9}}, grid:{display:false} },
-          y: { ticks:{color: T.muted, font:{family:'IBM Plex Mono', size:9}}, grid:{color: T.line}, min:0, max:100 }
+          x: {
+            ticks: { color: T.ink, font: monoFont },
+            grid: { display: false },
+            border: { color: T.ink, width: 2 },
+          },
+          y: {
+            ticks: { color: T.ink, font: monoFont },
+            grid: { color: 'rgba(0,0,0,0.1)' },
+            border: { color: T.ink, width: 2 },
+            min: 0, max: 100,
+          }
         },
         plugins: { legend: { display: false } }
       }
     });
   }
 
+  // ── Audit ───────────────────────────────────────────────────
   function renderAudit(rows) {
     allAuditRows = rows;
     filterAudit();
@@ -396,45 +650,45 @@
 
     const show  = filtered.slice(0, 100);
     const tbody = document.getElementById('audit-table-body');
+
     if (!show.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-[var(--muted)] py-4 border-b border-[var(--line)]">No matching records.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:1rem;color:#555;border-bottom:none;">No matching records.</td></tr>';
     } else {
       let html = '';
       show.forEach(r => {
         const outCls = OUTCOME_CLASS[r.outcome] || '';
-        const ts = (r.timestamp||'').replace('T',' ').substring(0, 19);
+        const ts  = (r.timestamp||'').replace('T',' ').substring(0, 19);
         const amt = r.amount_inr ? '₹' + Number(r.amount_inr).toLocaleString('en-IN') : '—';
-        
+
+        // ── Payment link ──
         let linkHtml = '';
         if (r.razorpay_short_url) {
-          linkHtml = `<a href="${r.razorpay_short_url}" target="_blank" class="payment-link">View payment link ↗</a>`;
+          linkHtml = `<a href="${r.razorpay_short_url}" target="_blank" class="payment-link">
+            View payment link ↗
+          </a>`;
         }
 
-        let outcomeBadges = '';
-        if (r.outcome) {
-          outcomeBadges += badge(r.outcome, outCls);
-        } else {
-          outcomeBadges += '—';
-        }
+        // ── Outcome badges ──
+        let outcomeBadges = r.outcome ? badge(r.outcome, outCls) : '—';
         if (r.confirmed_real_payment_id) {
-          outcomeBadges += ' ' + badge('REAL PAYMENT CONFIRMED', 'badge-recovered');
+          outcomeBadges += ' ' + badge('Real Payment Confirmed', 'badge-real-pay');
         }
         if (r.sms_sent === true || r.sms_sent === 1) {
-          outcomeBadges += ' <span class="badge badge-recovered" title="SID: ' + (r.sms_message_sid || 'N/A') + '">SMS Sent ✓</span>';
+          outcomeBadges += ` <span class="badge badge-sms" title="SID: ${r.sms_message_sid || 'N/A'}">SMS Sent ✓</span>`;
         }
 
         html += `
-          <tr class="audit-row-main hover:bg-[rgba(0,0,0,0.02)]">
-            <td class="mono text-[var(--muted)]">${ts}</td>
-            <td class="mono font-medium">${r.subscription_id}</td>
+          <tr class="audit-row-main">
+            <td class="mono" style="font-size:0.78rem;color:#333;">${ts}</td>
+            <td class="mono" style="font-weight:700;">${r.subscription_id}</td>
             <td>${r.bucket}</td>
             <td>${r.action}</td>
             <td class="text-right mono">${r.attempt_number}</td>
             <td class="text-right mono">${amt}</td>
             <td>${outcomeBadges}</td>
           </tr>
-          <tr class="audit-row-details hover:bg-[rgba(0,0,0,0.02)]">
-            <td colspan="7" class="border-b border-[var(--line)]">
+          <tr class="audit-row-details">
+            <td colspan="7">
               <div class="reasoning-text">${r.reasoning || 'No reasoning provided.'}</div>
               ${linkHtml}
             </td>
@@ -443,6 +697,7 @@
       });
       tbody.innerHTML = html;
     }
+
     document.getElementById('audit-count').textContent =
       'Showing ' + Math.min(show.length, 100) + ' of ' + filtered.length + ' records';
   }
