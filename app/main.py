@@ -10,6 +10,7 @@ from app.classifier import classify_error
 from app.decision_engine import decide_action
 from app.recovery_simulator import simulate_recovery_outcome
 from app.razorpay_client import create_recovery_payment_link
+from app.sms_client import send_recovery_sms
 from app import db
 from app.dashboard import router as dashboard_router
 
@@ -80,6 +81,7 @@ async def handle_webhook(request: Request):
     
     secret = os.getenv("RAZORPAY_WEBHOOK_SECRET")
     if secret and secret != "<placeholder>":
+        secret = secret.strip()
         if not verify_razorpay_signature(raw_body, signature, secret):
             try:
                 body_json = await request.json()
@@ -135,9 +137,17 @@ async def handle_webhook(request: Request):
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Malformed payload: {exc}")
 
+    _sub_conn = db.get_connection()
+    _sub_row = _sub_conn.execute(
+        "SELECT contact_consent FROM subscriptions WHERE subscription_id = ?",
+        (subscription_id,)
+    ).fetchone()
+    _sub_conn.close()
+    
     subscription = {
         "subscription_id": subscription_id,
         "current_status": sub_entity.get("current_status", "unknown"),
+        "contact_consent": bool(_sub_row["contact_consent"]) if _sub_row else True,
     }
 
     bucket = classify_error(error_code)
@@ -175,6 +185,8 @@ async def handle_webhook(request: Request):
     razorpay_payment_link_id: str | None = None
     razorpay_short_url: str | None = None
     payment_link_url: str | None = None
+    sms_sent_flag: bool | None = None
+    sms_message_sid: str | None = None
 
     if action in ("send_recovery_link", "send_card_update_link", "send_nudge"):
         # ---------------------------------------------------------------- #
@@ -237,6 +249,22 @@ async def handle_webhook(request: Request):
             reasoning += " [Real link creation disabled for remainder of session: Razorpay test-mode cap reached.]"
 
         # ---------------------------------------------------------------- #
+        # Real SMS delivery via Twilio (Package 9)                         #
+        # ---------------------------------------------------------------- #
+        if channel == "sms":
+            msg_text = f"Hi {customer_name}, your payment of Rs.{link_amount} for {plan_name} needs attention."
+            if payment_link_url:
+                msg_text += f" Complete it here: {payment_link_url}"
+                
+            sms_result = send_recovery_sms(customer_phone, msg_text)
+            if sms_result["success"]:
+                sms_sent_flag = True
+                sms_message_sid = sms_result["message_sid"]
+            else:
+                sms_sent_flag = False
+                reasoning += f" [SMS FAILED: {sms_result['error']}]"
+
+        # ---------------------------------------------------------------- #
         # Step 5c — simulate synthetic "did customer pay" outcome.         #
         # Logic unchanged from Package 2.                                  #
         # ---------------------------------------------------------------- #
@@ -269,6 +297,8 @@ async def handle_webhook(request: Request):
         razorpay_payment_link_id=razorpay_payment_link_id,
         razorpay_short_url=razorpay_short_url,
         razorpay_event_id=event_id,
+        sms_sent=sms_sent_flag,
+        sms_message_sid=sms_message_sid,
     )
 
     response = {
@@ -315,6 +345,7 @@ async def handle_payment_link_paid(request: Request):
     
     secret = os.getenv("RAZORPAY_WEBHOOK_SECRET")
     if secret and secret != "<placeholder>":
+        secret = secret.strip()
         if not verify_razorpay_signature(raw_body, signature, secret):
             raise HTTPException(status_code=401, detail="Invalid signature")
     else:

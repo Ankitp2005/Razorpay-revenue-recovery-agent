@@ -4,3 +4,4 @@ requests
 pydantic
 python-dotenv
 jinja2
+twilio>=9.0.0

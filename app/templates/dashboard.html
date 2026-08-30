@@ -419,6 +419,9 @@
         if (r.confirmed_real_payment_id) {
           outcomeBadges += ' ' + badge('REAL PAYMENT CONFIRMED', 'badge-recovered');
         }
+        if (r.sms_sent === true || r.sms_sent === 1) {
+          outcomeBadges += ' <span class="badge badge-recovered" title="SID: ' + (r.sms_message_sid || 'N/A') + '">SMS Sent ✓</span>';
+        }
 
         html += `
           <tr class="audit-row-main hover:bg-[rgba(0,0,0,0.02)]">

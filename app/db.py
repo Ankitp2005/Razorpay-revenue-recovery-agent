@@ -54,6 +54,8 @@ def init_audit_table() -> None:
         ("razorpay_short_url", "TEXT"),
         ("confirmed_real_payment_id", "TEXT"),
         ("razorpay_event_id", "TEXT"),
+        ("sms_sent", "BOOLEAN"),
+        ("sms_message_sid", "TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE audit_log ADD COLUMN {col} {col_type}")
@@ -85,6 +87,8 @@ def log_decision(
     razorpay_payment_link_id: str | None = None,
     razorpay_short_url: str | None = None,
     razorpay_event_id: str | None = None,
+    sms_sent: bool | None = None,
+    sms_message_sid: str | None = None,
 ) -> None:
     """Insert one row into audit_log."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -94,12 +98,14 @@ def log_decision(
         INSERT INTO audit_log
             (subscription_id, event_type, error_code, bucket, attempt_number,
              action, channel, reasoning, outcome, amount_inr, timestamp,
-             razorpay_payment_link_id, razorpay_short_url, razorpay_event_id)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             razorpay_payment_link_id, razorpay_short_url, razorpay_event_id,
+             sms_sent, sms_message_sid)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (subscription_id, event_type, error_code, bucket, attempt_number,
          action, channel, reasoning, outcome, amount_inr, ts,
-         razorpay_payment_link_id, razorpay_short_url, razorpay_event_id),
+         razorpay_payment_link_id, razorpay_short_url, razorpay_event_id,
+         sms_sent, sms_message_sid),
     )
     conn.commit()
     conn.close()
