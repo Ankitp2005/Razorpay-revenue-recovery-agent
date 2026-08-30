@@ -146,7 +146,7 @@
     /* ── SUMMARY STRIP ──────────────────────────────────────── */
     .summary-strip {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       gap: 0;
       margin-bottom: 2.5rem;
       border: var(--border-width) solid var(--ink);
@@ -159,8 +159,35 @@
       background: var(--bg);
       position: relative;
     }
-    .summary-block:last-child { border-right: none; }
-    .summary-block.highlight  { background: var(--success); }
+    .summary-block:last-child  { border-right: none; }
+    .summary-block.highlight   { background: var(--success); }
+    .summary-block.highlight-link { background: var(--accent-link); }
+    .summary-block.highlight-link .summary-label,
+    .summary-block.highlight-link .summary-value { color: #fff; }
+
+    /* ── TOGGLE BUTTON ──────────────────────────────────────── */
+    .btn-toggle {
+      font-family: 'Archivo Black', sans-serif;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--ink);
+      background: var(--bg);
+      border: var(--border-width) solid var(--ink);
+      padding: 0.45rem 1rem;
+      cursor: pointer;
+      box-shadow: var(--shadow);
+      transform: translate(0, 0);
+      transition: box-shadow 80ms, transform 80ms, background 80ms, color 80ms;
+      white-space: nowrap;
+    }
+    .btn-toggle:hover  { box-shadow: var(--shadow-hover);  transform: translate(-2px, -2px); }
+    .btn-toggle:active { box-shadow: var(--shadow-active); transform: translate(2px, 2px); }
+    .btn-toggle.active {
+      background: var(--accent-primary);
+      color: var(--ink);
+      box-shadow: var(--shadow);
+    }
 
     .summary-label {
       font-family: 'Space Grotesk', sans-serif;
@@ -416,6 +443,10 @@
         <div class="summary-label">Recovery Rate</div>
         <div id="kpi-rate" class="summary-value mono">—</div>
       </div>
+      <div class="summary-block highlight-link">
+        <div class="summary-label">Real Payment Links</div>
+        <div id="kpi-real-links" class="summary-value mono">—</div>
+      </div>
     </div>
 
     <!-- ── MID GRID: Breakdown + Charts ─────────────────────── -->
@@ -463,8 +494,13 @@
     <div>
       <div class="audit-header">
         <h2 class="section-heading" style="margin-bottom:0;border-bottom:none;">Audit Ledger</h2>
-        <input id="audit-search" class="filter-input" oninput="filterAudit()"
-               placeholder="Filter records..." autocomplete="off" />
+        <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+          <input id="audit-search" class="filter-input" oninput="filterAudit()"
+                 placeholder="Filter records..." autocomplete="off" />
+          <button id="real-pay-toggle" class="btn-toggle" onclick="toggleRealPay()">
+            ⬡ Real Payments Only
+          </button>
+        </div>
       </div>
       <div class="audit-scroll">
         <table>
@@ -493,6 +529,7 @@
   let donutChart = null;
   let barChart   = null;
   let allAuditRows = [];
+  let realPayOnly  = false;   // ← toggle state for "Real Payments Only"
 
   // ── Color tokens (for Chart.js — must match CSS vars) ──────
   const T = {
@@ -523,6 +560,18 @@
 
   function badge(text, cls) {
     return `<span class="badge ${cls}">${text.toUpperCase()}</span>`;
+  }
+
+  // ── Toggle: Real Payments Only ───────────────────────────────
+  function toggleRealPay() {
+    realPayOnly = !realPayOnly;
+    const btn = document.getElementById('real-pay-toggle');
+    if (realPayOnly) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+    filterAudit();
   }
 
   // ── Refresh ─────────────────────────────────────────────────
@@ -634,19 +683,34 @@
   // ── Audit ───────────────────────────────────────────────────
   function renderAudit(rows) {
     allAuditRows = rows;
+
+    // ── KPI: count rows with a real payment link id ──────────
+    const realLinkCount = rows.filter(r => r.razorpay_payment_link_id).length;
+    document.getElementById('kpi-real-links').textContent = realLinkCount;
+
     filterAudit();
   }
 
   function filterAudit() {
     const q = (document.getElementById('audit-search').value || '').toLowerCase();
-    const filtered = q
-      ? allAuditRows.filter(r =>
-          (r.subscription_id||'').toLowerCase().includes(q) ||
-          (r.action||'').toLowerCase().includes(q) ||
-          (r.bucket||'').toLowerCase().includes(q) ||
-          (r.outcome||'').toLowerCase().includes(q) ||
-          (r.reasoning||'').toLowerCase().includes(q))
-      : allAuditRows;
+
+    // Apply both filters together (AND logic)
+    let filtered = allAuditRows;
+
+    // 1. Text search filter
+    if (q) {
+      filtered = filtered.filter(r =>
+        (r.subscription_id||'').toLowerCase().includes(q) ||
+        (r.action||'').toLowerCase().includes(q) ||
+        (r.bucket||'').toLowerCase().includes(q) ||
+        (r.outcome||'').toLowerCase().includes(q) ||
+        (r.reasoning||'').toLowerCase().includes(q));
+    }
+
+    // 2. Real payments only toggle
+    if (realPayOnly) {
+      filtered = filtered.filter(r => !!r.razorpay_payment_link_id);
+    }
 
     const show  = filtered.slice(0, 100);
     const tbody = document.getElementById('audit-table-body');
@@ -699,7 +763,8 @@
     }
 
     document.getElementById('audit-count').textContent =
-      'Showing ' + Math.min(show.length, 100) + ' of ' + filtered.length + ' records';
+      'Showing ' + Math.min(show.length, 100) + ' of ' + filtered.length + ' records'
+      + (realPayOnly ? ' [REAL PAYMENTS ONLY]' : '');
   }
 
   refresh();
