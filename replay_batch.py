@@ -18,6 +18,11 @@ import json
 import sqlite3
 import sys
 import time
+import hmac
+import hashlib
+import os
+from dotenv import load_dotenv
+load_dotenv()
 from pathlib import Path
 
 try:
@@ -155,8 +160,17 @@ def main():
             event_type = determine_event_type(sub, attempt, attempts)
             webhook = build_webhook(sub, attempt, event_type)
 
+
+            raw_body = json.dumps(webhook, separators=(',', ':')).encode('utf-8')
+            secret = os.getenv("RAZORPAY_WEBHOOK_SECRET")
+            headers = {"X-Razorpay-Event-Id": f"evt_{attempt['attempt_id']}"}
+            if secret and secret != "<placeholder>":
+                signature = hmac.new(secret.strip().encode('utf-8'), raw_body, hashlib.sha256).hexdigest()
+                headers["X-Razorpay-Signature"] = signature
+                headers["Content-Type"] = "application/json"
             try:
-                r = requests.post(WEBHOOK_URL, json=webhook, timeout=10)
+                r = requests.post(WEBHOOK_URL, data=raw_body, headers=headers, timeout=10)
+
                 r.raise_for_status()
                 result = r.json()
                 ok_count += 1

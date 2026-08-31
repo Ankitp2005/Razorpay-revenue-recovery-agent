@@ -14,5 +14,4 @@ def verify_razorpay_signature(raw_body: bytes, signature: str, secret: str) -> b
         raw_body,
         hashlib.sha256
     ).hexdigest()
-    
     return hmac.compare_digest(expected_mac, signature)
